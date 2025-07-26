@@ -18,7 +18,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push-image:
+  build-push-and-deploy-image:
     runs-on: ubuntu-24.04
 
     permissions:
@@ -65,3 +65,22 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+      - name: Create Render service preview
+        if: github.event_name == 'pull_request'
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/preview"
+          method: "POST"
+          bearerToken: ${{ secrets.RENDER_API_KEY }}
+          data: '{ "imagePath": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" }'
+
+      - name: Trigger deploy on Render
+        if: github.event_name != 'pull_request'
+        env:
+          TAG: ${{ steps.meta.outputs.tags }}
+          DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          curl --request GET \
+          --data-urlencode "imgURL=$REGISTRY/$IMAGE_NAME:$TAG \
+          --url $DEPLOY_HOOK_URL
